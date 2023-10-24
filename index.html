@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roulette Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <style>
+        *{ padding: 0; margin: 0; }
+        html, body{ width: 100%; height: 100%; background: #ddd; }
+        #wrapper{ display: flex; flex-direction: column; align-items: center; height: 100%; margin: 0 auto; }
+        #topDiv, #bottomDiv { width: 100%; flex: 1; background: #eee; display: flex; align-items: center; justify-content: center; }
+        #gameDiv { background: #ddd; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+    <div id="wrapper">
+        <div id="topDiv">Top Content Here</div>
+        <div id="gameDiv"></div>
+        <div id="bottomDiv">Bottom Content Here</div>
+    </div>
+
+    <script>
+        // 기본 사이즈 모바일(9:16)으로 유지, body에 그 너비를 min-width로 부여 (추후 반응형으로 변경 예정)
+        let topHeight = document.querySelector('#topDiv').offsetHeight;
+        let botHeight = document.querySelector('#bottomDiv').offsetHeight;
+        document.querySelector('#gameDiv').style.height = `calc(100% - ${topHeight + botHeight}px)`;
+        let rouletteHeight = document.querySelector('#gameDiv').offsetHeight;
+        document.querySelector('#wrapper').style.width = `${rouletteHeight * 0.5625}px`;
+        let rouletteWidth = document.querySelector('#wrapper').offsetWidth;
+        document.body.style.minWidth = rouletteWidth + 'px';
+
+        // Phaser game configuration
+        const config = {
+            type: Phaser.CANVAS,
+            width: rouletteWidth,
+            height: rouletteHeight,
+            parent: 'gameDiv',
+            scene: {
+                preload: preload,
+                create: create,
+                update: update,
+            },
+        };
+
+        const game = new Phaser.Game(config);
+
+        let roulette;
+        let container;
+        let spinSpeed = 0; 
+        const sectors = ["떡볶이", '돈가스', "초밥", "피자", "냉면", "치킨", '족발', "파스타", "삼겹살"];
+        const colors = ["#dc0936", "#e6471d", "#f7a416", "#efe61f", "#60b236", "#209b6c", "#169ed8", "#3f297e", "#87207b"];
+        let currentAngle = 0;
+        let sectorAngle = 0;
+        let isSpinning = false;
+        let spinDuration = 0; // 룰렛이 도는 시간을 추적
+        const maxSpinDuration = 100;
+
+        for(let i = 0; i < colors.length; i++) {
+            colors[i] = '0x' + colors[i].substring(1, colors.length - 1);
+        }
+
+        function preload() {
+            this.load.image('food0', './assets/images/food0.png');
+            this.load.image('food1', './assets/images/food1.png');
+            this.load.image('food2', './assets/images/food2.png');
+            this.load.image('food3', './assets/images/food3.png');
+            this.load.image('food4', './assets/images/food4.png');
+            this.load.image('food5', './assets/images/food5.png');
+            this.load.image('food6', './assets/images/food6.png');
+            this.load.image('food7', './assets/images/food7.png');
+            this.load.image('food8', './assets/images/food8.png');
+        } 
+
+        function create() {
+            this.textures.remove('rouletteTexture');
+
+            let graphics = this.add.graphics();
+            sectorAngle = 360 / sectors.length;
+
+            let texts = [];
+            let radiusForText = (Math.min(rouletteWidth, rouletteHeight) / 3) * 0.7; // 텍스트의 위치를 결정하기 위한 반지름
+
+            for (let i = 0; i < sectors.length; i++) {
+                graphics.fillStyle(colors[i], 1);
+                graphics.slice(rouletteWidth / 2, rouletteHeight / 2, Math.min(rouletteWidth, rouletteHeight) / 3, Phaser.Math.DegToRad(currentAngle), Phaser.Math.DegToRad(currentAngle + sectorAngle), false);
+                graphics.fillPath();
+
+                let savedCurrentAngle = currentAngle; // 현재 각도 저장
+                currentAngle += sectorAngle;
+
+                let angleForText = (i * sectorAngle + (sectorAngle / 2) - 90) * (Math.PI / 180); // 각 섹터의 중심 각도를 라디안으로 변환 (-90은 위쪽 방향에서 시작하기 위함)
+                let placeAngle = savedCurrentAngle + sectorAngle / 2
+        
+                let xText = 0 + radiusForText * Math.cos(angleForText);
+                let yText = 0 + radiusForText * Math.sin(angleForText);
+
+                let text = this.add.text(xText, yText, sectors[i], { 
+                    fontSize: '20px', 
+                    color: '#ffffff',
+                    align: 'center'
+                }).setOrigin(0.5, 0.5).setDepth(2).setAngle(placeAngle);
+
+                let image = this.add.image(xText + rouletteWidth / 2, yText + rouletteHeight / 2 + 25, `food${i}`);
+                image.setDepth(2).setScale(0.1);
+
+                texts.push(text);
+            }
+
+            graphics.generateTexture('rouletteTexture', rouletteWidth, rouletteHeight);
+            roulette = this.add.image(0, 0, 'rouletteTexture').setOrigin(0.5).setDepth(0);
+            container = this.add.container(rouletteWidth / 2, rouletteHeight / 2, [roulette, ...texts]);
+
+            // Clear the graphics (we don't need it anymore)
+            graphics.clear();
+
+            // 회전 시작 버튼
+            let spinButton = this.add.text(rouletteWidth / 2, rouletteHeight - 50, "SPIN", { fill: "#fff", backgroundColor: "#000", padding: 10 }).setOrigin(0.5).setInteractive();
+            spinButton.on('pointerdown', () => {
+                if (!isSpinning) {
+                    isSpinning = true;
+                    spinSpeed = Phaser.Math.Between(15, 25); // 초기 회전 속도 관련
+                }
+            });
+        }
+
+        function update() {
+            if (isSpinning) {
+                spinDuration++;
+
+                if (spinDuration < maxSpinDuration) {
+                    container.angle += spinSpeed; // 일반 회전
+                } else {
+                    container.angle += spinSpeed;
+                    spinSpeed *= 0.985; // 감속 회전
+                }
+
+                if (spinSpeed <= 0.1) { // 정지
+                    spinSpeed = 0;
+                    isSpinning = false;
+
+                    // 당첨 섹터 계산
+                    let totalAngle = (container.angle % 360 + 360) % 360;
+                    let sectorIndex = Math.floor(totalAngle / sectorAngle);
+                    let result = sectors[sectors.length - sectorIndex - 1];
+                    if (!result) {
+                        // Fallback in case the calculation does not yield a valid sector
+                        result = sectors[0];
+                    }
+                    alert(`Winner: ${result}`);
+                }
+            }
+        }   
+    </script>
+</body>
+</html>
